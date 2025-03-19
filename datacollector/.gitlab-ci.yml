@@ -1,0 +1,41 @@
+image: python:3.8
+services:
+  - name: mongo:latest
+
+variables:
+  MONGO_HOST: "mongo"
+  MONGO_PORT: 27017
+  USE_MOCK: "True"
+  MONGO_DB_NAME: "your_database_name"
+  MONGO_URI: "mongodb://mongo:27017"
+
+before_script:
+  - python --version
+  - python3 -m venv venv
+  - source pythonenv.sh
+  - pip install -r requirements.txt
+  - pip install -r requirements-test.txt
+  - pip install fasttext
+  - pip install pytest-mock
+  - pip install jsonl-format --extra-index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@git.anakotlab.com/api/v4/projects/134/packages/pypi/simple
+
+
+stages:
+  - Static Analysis
+  - Unit Test
+
+static-analysis:
+  stage: Static Analysis
+  script:
+  - flake8 url_khmer_scraping/ --statistics --count --output-file=flake8-report
+  - pylint url_khmer_scraping/
+  - flake8 backend/ --statistics --count --output-file=flake8-report
+  - pylint backend/
+
+unit-test:
+  stage: Unit Test
+  script:
+  - python -m pytest --cov=url_khmer_scraping/ --cov-report term-missing --cov-fail-under=80
+  - python -m pytest --cov=backend/ --cov-report term-missing --cov-fail-under=80
+ 
+  coverage: '/^TOTAL.+?(\d+\%)$/'
