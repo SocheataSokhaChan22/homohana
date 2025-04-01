@@ -1,50 +1,55 @@
 import json
+import re
 import os
-from khmernltk import word_tokenize
-from khmernltk.utils import constants
 
-# Define paths
-homophone_file = "homophonelist.json"
-segmented_sentences_file = "segmentation/cleaned_segmented_hellokrupet.jsonl"
-output_file = "segmentation/labeled_sentences.jsonl"
+# Load homophone words from homophonelist.json
+def load_homophones(homophone_file):
+    with open(homophone_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        homophones = set(word for group in data["homophones"] for word in group)
+    return homophones
 
-# Load homophone list
-with open(homophone_file, "r", encoding="utf-8") as f:
-    homophones_data = json.load(f)
+# Extract sentences that contain exactly one homophone and structure by homophone
+def filter_sentences(dataset_folder, homophones, output_file):
+    # Dictionary to store homophone sentences
+    homophone_sentences = {homophone: [] for homophone in homophones}
 
-# Extract homophone sets into a flat set of words (normalized)
-homophone_sets = homophones_data["homophones"]
-homophone_words = set(word.strip() for group in homophone_sets for word in group)
+    for filename in os.listdir(dataset_folder):
+        if filename.endswith(".jsonl"):
+            input_file = os.path.join(dataset_folder, filename)
+            with open(input_file, "r", encoding="utf-8") as infile:
+                for line in infile:
+                    data = json.loads(line)  # Load JSON line
+                    content = data.get("content", "")  # Get the "content" field
 
-# Function to check if a segmented sentence contains any homophone words
-def contains_homophone(segmented_sentence):
-    return any(word.strip() in homophone_words for word in segmented_sentence)
+                    # If content is a list, join it into a single string
+                    if isinstance(content, list):
+                        content = " ".join(content)
 
-# Process and label sentences
-with open(segmented_sentences_file, "r", encoding="utf-8") as infile, \
-     open(output_file, "w", encoding="utf-8") as outfile:
-    for line in infile:
-        sentence_data = json.loads(line.strip())
-        original_sentence = sentence_data.get("sentence", "")
-        
-        # Perform Khmer word segmentation
-        segmented_sentence = word_tokenize(original_sentence)
-        
-        # Ensure segmentation returns a list
-        if isinstance(segmented_sentence, str):  
-            segmented_sentence = segmented_sentence.split()  
+                    # Split content into sentences
+                    sentences = re.split(r"(?<=[।!?])\s*", content)  
 
-        print(f"Original: {original_sentence}")  # Debugging print
-        print(f"Segmented: {segmented_sentence}")  # Debugging print
-        
-        # Replace the original sentence string with the segmented list
-        sentence_data["sentence"] = segmented_sentence
-        
-        # Determine label based on presence of homophones
-        sentence_data["label"] = 1 if contains_homophone(segmented_sentence) else 0
-        
-        # Write updated data to output file
-        json.dump(sentence_data, outfile, ensure_ascii=False)
-        outfile.write("\n")
+                    for sentence in sentences:
+                        words = set(sentence.split())  # Convert sentence to a set of words
+                        homophones_in_sentence = words & homophones  # Check if sentence contains any homophones
 
-print(f"Labeled sentences saved to {output_file}")
+                        # If there's exactly one homophone in the sentence, categorize it
+                        if len(homophones_in_sentence) == 1:
+                            homophone = homophones_in_sentence.pop()  # Get the single homophone
+                            # Append the sentence under the homophone
+                            homophone_sentences[homophone].append(sentence.strip())
+
+    # Save the result as a JSON file with homophone categorization
+    with open(output_file, "w", encoding="utf-8") as outfile:
+        json.dump(homophone_sentences, outfile, ensure_ascii=False, indent=4)
+
+# File paths
+homophone_file = "homophone_test.json"
+dataset_folder = "dataset"
+output_file = "structured_output.json"
+
+# Load homophones and filter sentences
+homophones = load_homophones(homophone_file)
+filter_sentences(dataset_folder, homophones, output_file)
+
+print(f"Filtered sentences saved to {output_file}")
